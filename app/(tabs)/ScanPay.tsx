@@ -1,22 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Button, Text,StyleSheet } from 'react-native';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { View, Button, Text, StyleSheet, SafeAreaView } from 'react-native';
+import { CameraView,  useCameraPermissions } from 'expo-camera';
 import PaymentModal from '@/components/Screens/PaymentModal';
 
 const ScanPay: React.FC = () => {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [scanned, setScanned] = useState(false);  
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
   const [qrCodeValue, setQrCodeValue] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
 
   useEffect(() => {
-    const getBarCodeScannerPermissions = async () => {
-      const { status } = await BarCodeScanner.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
-    };
-
-    getBarCodeScannerPermissions();
-  }, []);
+    if (permission === null) {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
 
   const handleBarCodeScanned = ({ type, data }: { type: string, data: string }) => {
     setScanned(true);
@@ -24,39 +21,45 @@ const ScanPay: React.FC = () => {
     setModalVisible(true);
   };
 
-  if (hasPermission === null) {
+  if (permission === null) {
     return <Text>Requesting for camera permission...</Text>;
   }
-  if (hasPermission === false) {
-    return <Text>No access to camera</Text>;
+  if (!permission.granted) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.message}>We need your permission to use the camera</Text>
+        <Button onPress={requestPermission} title="Grant Permission" />
+      </View>
+    );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.scannerContainer}>
-        <BarCodeScanner
-          onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-          style={StyleSheet.absoluteFillObject}
+    <SafeAreaView style={StyleSheet.absoluteFillObject}>
+      <View style={styles.container}>
+        <CameraView 
+          style={StyleSheet.absoluteFillObject} 
+          facing='back' 
+          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned} 
+        />
+
+        {scanned && (
+          <Button
+            title={'Tap to Scan Again'}
+            onPress={() => {
+              setScanned(false);
+              setQrCodeValue(null);
+              setModalVisible(false);
+            }}
+          />
+        )}
+
+        <PaymentModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          qrCodeValue={qrCodeValue}
         />
       </View>
-
-      {scanned && (
-        <Button
-          title={'Tap to Scan Again'}
-          onPress={() => {
-            setScanned(false);
-            setQrCodeValue(null);
-            setModalVisible(false);
-          }}
-        />
-      )}
-
-      <PaymentModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        qrCodeValue={qrCodeValue}
-      />
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -69,8 +72,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f0f0f0',
   },
-  scannerContainer: {
-    width: '100%',
-    height: '60%',
+  message: {
+    textAlign: 'center',
+    paddingBottom: 10,
   },
 });

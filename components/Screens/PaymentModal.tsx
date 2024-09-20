@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal, View, Text, Button, StyleSheet, TextInput, Alert, Linking } from 'react-native';
 
 interface PaymentModalProps {
@@ -7,10 +7,18 @@ interface PaymentModalProps {
   qrCodeValue: string | null;
 }
 
+const MAX_UPI_AMOUNT = 100000; // Maximum amount per transaction
+const MAX_UPI_DAILY_AMOUNT = 100000; // Maximum amount per day
+const MAX_UPI_TRANSACTIONS = 10; // Maximum transactions per day
+
 const PaymentModal: React.FC<PaymentModalProps> = ({ visible, onClose, qrCodeValue }) => {
   const [amount, setAmount] = useState<string>('');
   const [personAddress, setPersonAddress] = useState<string>('');
   const [personName, setPersonName] = useState<string>('');
+  const [aid, setAid] = useState<string>('');
+  const [paymentNote, setPaymentNote] = useState<string>('');
+  const [transactionsToday, setTransactionsToday] = useState<number>(0);
+  const [totalAmountToday, setTotalAmountToday] = useState<number>(0);
 
   // Function to parse QR code URL and extract 'pa' and 'pn' values
   const parseQrCodeValue = (qrValue: string) => {
@@ -19,6 +27,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ visible, onClose, qrCodeVal
       const params = new URLSearchParams(url.search);
       setPersonAddress(params.get('pa') || '');
       setPersonName(params.get('pn') || '');
+      setAid(params.get('aid') || '');
     } catch (error) {
       console.error('Error parsing QR code value:', error);
       Alert.alert('Error', 'Failed to parse QR code.');
@@ -26,24 +35,51 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ visible, onClose, qrCodeVal
   };
 
   // Call parseQrCodeValue when qrCodeValue is updated
-  React.useEffect(() => {
+  useEffect(() => {
     if (qrCodeValue) {
       parseQrCodeValue(qrCodeValue);
     }
   }, [qrCodeValue]);
 
   const handlePayment = () => {
+    const amountNumber = parseFloat(amount);
+
     if (!amount || !personAddress) {
       Alert.alert('Error', 'Please enter the amount and scan a QR code.');
       return;
     }
 
-    // Construct the payment URL
-    const url = `upi://pay?pa=${personAddress}&pn=${personName}&am=${amount}&cu=INR`;
+    if (isNaN(amountNumber) || amountNumber <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount.');
+      return;
+    }
 
+    if (amountNumber > MAX_UPI_AMOUNT) {
+      Alert.alert('Error', `The amount exceeds the maximum limit of ₹${MAX_UPI_AMOUNT}.`);
+      return;
+    }
+
+    if (transactionsToday >= MAX_UPI_TRANSACTIONS) {
+      Alert.alert('Error', `You have reached the maximum number of UPI transactions (${MAX_UPI_TRANSACTIONS}) for today.`);
+      return;
+    }
+
+    if (totalAmountToday + amountNumber > MAX_UPI_DAILY_AMOUNT) {
+      Alert.alert('Error', `The total amount exceeds the daily limit of ₹${MAX_UPI_DAILY_AMOUNT}.`);
+      return;
+    }
+
+    // Construct the payment URL
+    const url = `upi://pay?pa=${personAddress}&pn=${personName}&am=${amountNumber.toFixed(2)}&cu=INR&aid=${aid}&mode=02&tn=${paymentNote}`;
+    console.log("URRRRRRRRRR:::: "+url);
     Linking.openURL(url)
+      .then(() => {
+        // Update the transaction counters
+        setTransactionsToday(transactionsToday + 1);
+        setTotalAmountToday(totalAmountToday + amountNumber);
+      })
       .catch(() => {
-        Alert.alert('Error', 'Failed to open the payment app.');
+        Alert.alert('Error', 'Failed to open the payment app. Please try again.');
       });
   };
 
@@ -64,6 +100,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ visible, onClose, qrCodeVal
             keyboardType="numeric"
             value={amount}
             onChangeText={setAmount}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Note"
+            value={paymentNote} // Payment note input
+            onChangeText={setPaymentNote}
           />
 
           <Button title="Pay" onPress={handlePayment} />
